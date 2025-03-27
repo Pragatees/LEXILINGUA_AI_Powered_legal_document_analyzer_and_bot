@@ -1,0 +1,93 @@
+/* Global Application Styles */
+.stApp {
+    background-color: #000000;
+    font-family: 'Inter', sans-serif;
+    color: #ffffff;
+}
+
+/* Typography */
+h1, h2, h3 {
+    color: #ffffff;
+    font-weight: 700;
+}
+
+/* Button Styles */
+.stButton>button {
+    background-color: #3498db;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 10px 20px;
+    transition: all 0.3s ease;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.stButton>button:hover {
+    background-color: #2980b9;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 6px rgba(255, 255, 255, 0.2);
+}
+
+/* File Uploader Styles */
+.stFileUploader {
+    background-color: #1a1a1a;
+    border-radius: 10px;
+    padding: 15px;
+    box-shadow: 0 2px 5px rgba(255, 255, 255, 0.1);
+}
+
+/* Tabs Styling */
+.stTabs [data-baseweb="tab-list"] {
+    background-color: #1a1a1a;
+    border-radius: 12px;
+    box-shadow: 0 2px 5px rgba(255, 255, 255, 0.05);
+}
+
+.stTabs [data-baseweb="tab"] {
+    color: #ffffff;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.stTabs [data-baseweb="tab"]:hover {
+    background-color: #333333;
+}
+
+/* Card-like Containers */
+.stExpander, .stContainer {
+    background-color: #1a1a1a;
+    border-radius: 10px;
+    box-shadow: 0 2px 5px rgba(255, 255, 255, 0.1);
+    padding: 15px;
+    margin-bottom: 15px;
+    color: #ffffff;
+}
+
+/* Sidebar Styling */
+.css-1aumxhk {
+    background-color: #121212;
+}
+
+/* Alert and Info Boxes */
+.stAlert {
+    border-radius: 8px;
+    background-color: #222222;
+    color: #ffffff;
+}
+
+/* Responsive Input Fields */
+.stTextInput>div>div>input, 
+.stSelectbox>div>div>select {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    border-radius: 8px;
+    border: 1px solid #444444;
+    transition: all 0.3s ease;
+}
+
+.stTextInput>div>div>input:focus, 
+.stSelectbox>div>div>select:focus {
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.5);
+}
