@@ -17,9 +17,9 @@ from streamlit_extras.stylable_container import stylable_container
 
 # Set page config
 st.set_page_config(
-    page_title="Multilingual Document Analyzer",
-    layout="centered",
-    initial_sidebar_state="expanded"
+    page_title="Lexlingua",
+    page_icon="⚖️",
+    layout="wide"
 )
 
 # Initialize Groq Client
@@ -53,7 +53,8 @@ FIELD_TRANSLATIONS = {
         'description': 'Description',
         'why_it_matters': 'Why it matters',
         'mitigation': 'Mitigation',
-        'occurrence': 'Occurrence'
+        'occurrence': 'Occurrence',
+        'ipc_sections': 'Relevant IPC Sections'
     },
     'ta': {
         'category': 'வகை',
@@ -61,7 +62,8 @@ FIELD_TRANSLATIONS = {
         'description': 'விளக்கம்',
         'why_it_matters': 'ஏன் முக்கியம்',
         'mitigation': 'தணிப்பு',
-        'occurrence': 'நிகழ்வு'
+        'occurrence': 'நிகழ்வு',
+        'ipc_sections': 'தொடர்புடைய IPC பிரிவுகள்'
     },
     'hi': {
         'category': 'श्रेणी',
@@ -69,7 +71,8 @@ FIELD_TRANSLATIONS = {
         'description': 'विवरण',
         'why_it_matters': 'महत्व क्यों',
         'mitigation': 'शमन',
-        'occurrence': 'घटना'
+        'occurrence': 'घटना',
+        'ipc_sections': 'संबंधित आईपीसी धाराएं'
     },
     'te': {
         'category': 'వర్గం',
@@ -77,7 +80,8 @@ FIELD_TRANSLATIONS = {
         'description': 'వివరణ',
         'why_it_matters': 'ఎందుకు ముఖ్యం',
         'mitigation': 'తగ్గింపు',
-        'occurrence': 'సంభవించిన'
+        'occurrence': 'సంభవించిన',
+        'ipc_sections': 'సంబంధిత IPC సెక్షన్లు'
     },
     'ml': {
         'category': 'വിഭാഗം',
@@ -85,7 +89,8 @@ FIELD_TRANSLATIONS = {
         'description': 'വിവരണം',
         'why_it_matters': 'എന്തുകൊണ്ട് പ്രധാനം',
         'mitigation': 'ശമനം',
-        'occurrence': 'സംഭവം'
+        'occurrence': 'സംഭവം',
+        'ipc_sections': 'ബന്ധപ്പെട്ട IPC വകുപ്പുകൾ'
     },
     'kn': {
         'category': 'ವರ್ಗ',
@@ -93,7 +98,8 @@ FIELD_TRANSLATIONS = {
         'description': 'ವಿವರಣೆ',
         'why_it_matters': 'ಏಕೆ ಮುಖ್ಯ',
         'mitigation': 'ಶಮನ',
-        'occurrence': 'ಸಂಭವಿಸುವಿಕೆ'
+        'occurrence': 'ಸಂಭವಿಸುವಿಕೆ',
+        'ipc_sections': 'ಸಂಬಂಧಿತ IPC ವಿಭಾಗಗಳು'
     }
 }
 
@@ -176,27 +182,27 @@ def extract_text_from_pdf(uploaded_file):
 def analyze_legal_risks(legal_text, language_code):
     """Analyze legal text using Llama through Groq API"""
     prompt = f"""
-    You are an expert legal analyst.
-    Analyze the following legal document and extract key legal risks.
+    You are an expert legal analyst specializing in Indian law.
+    Analyze the following legal document and extract key legal risks with relevant IPC sections.
     
-    IMPORTANT LANGUAGE INSTRUCTIONS:
-    - The document is in {language_code} language.
-    - You MUST provide all responses in the language of {language_code}.
-    - Do NOT translate any part of the document or your analysis to English.
-    - Keep all output in the document's original language ({language_code}).
+    IMPORTANT INSTRUCTIONS:
+    1. Language: The document is in {language_code} language. Provide all responses in the same language.
+    2. IPC Sections: For each identified risk, include the most relevant Indian Penal Code (IPC) sections.
+    3. Format: Strictly follow the JSON output format below.
+    4. Accuracy: Ensure IPC sections are accurately mapped to the identified risks.
     
-    Step 1: Identify Key Legal Risks
-    - List all possible legal risks in the document.
-    - Categorize them under sections like Contractual Risks, Compliance Risks, Liability Risks, etc.
-
-    Step 2: Explain Each Risk
-    - Provide a brief explanation of why each risk is significant.
-    - Suggest potential mitigation strategies.
-    - Mention the exact section in the legal text where the risk occurs.
-    - Assign a severity score from 1-10 for each risk (1 being minimal risk, 10 being severe risk)
-    - Assign an impact score from 1-5 (1 being low impact, 5 being high impact)
-
-    Output Format:
+    ANALYSIS STEPS:
+    1. Identify all legal risks in the document
+    2. Categorize them (Contractual, Compliance, Liability, etc.)
+    3. For each risk:
+       - Provide description
+       - Explain significance
+       - Suggest mitigation
+       - Note occurrence in text
+       - Assign severity (1-10) and impact (1-5) scores
+       - List relevant IPC sections with brief explanations
+    
+    OUTPUT FORMAT:
     {{
         "risks": [
             {{
@@ -205,20 +211,27 @@ def analyze_legal_risks(legal_text, language_code):
                 "description": "[Short Description]",
                 "why_it_matters": "[Explanation]",
                 "mitigation": "[How to address this risk]",
-                "occurrence": "[Exact text that closely related to that risk]",
+                "occurrence": "[Exact text related to risk]",
                 "severity": [Score from 1-10],
-                "impact": [Score from 1-5]
+                "impact": [Score from 1-5],
+                "ipc_sections": [
+                    {{
+                        "section": "IPC Section X",
+                        "description": "Brief description of how this section applies"
+                    }}
+                ]
             }}
         ]
     }}
 
+    ADDITIONAL REQUIREMENTS:
+    - Include at least one IPC section for each criminal or quasi-criminal risk
+    - For civil/commercial risks, mention "Not applicable" if no IPC sections apply
+    - Ensure grammatical correctness in {language_code}
+    - If no risks found, return empty "risks" array
+
     Legal Document:
     {legal_text}
-    
-    If you find any grammatical mistakes in the given document , you must solve the entire mistakes and give me the output in correct grammatical manner
-
-    Respond ONLY with the JSON format in {language_code} language.
-    Do not include any additional text before or after the JSON.
     """
 
     try:
@@ -417,6 +430,20 @@ st.markdown("""
         border-left: 3px solid #6c757d;
     }
     
+    /* IPC section styling */
+    .ipc-section {
+        background: #222;
+        padding: 10px;
+        border-radius: 6px;
+        margin: 8px 0;
+        border-left: 3px solid #4d94ff;
+    }
+    
+    .ipc-section-title {
+        font-weight: bold;
+        color: #4d94ff !important;
+    }
+    
     /* Metric cards */
     .metric-card {
         border-radius: 12px;
@@ -580,7 +607,7 @@ st.markdown("""
 # App title with gradient header
 st.markdown("""
 <div class="header-gradient">
-    <h1 style="color: white; margin: 0; padding: 0;">🌍 Multilingual Legal Analyzer</h1>
+    <h1 style="color: white; margin: 0; padding: 0;">⚖️ Lexi-Lingua</h1>
     <p style="color: #e0e0e0; margin: 0; padding: 0;">AI-powered legal document analysis with multilingual support</p>
 </div>
 """, unsafe_allow_html=True)
@@ -981,14 +1008,35 @@ with tab1:
                                     <p><strong>{translations['description']}:</strong> {risk.get('description', 'No description')}</p>
                                     <p><strong>{translations['why_it_matters']}:</strong> {risk.get('why_it_matters', 'N/A')}</p>
                                     <p><strong>{translations['mitigation']}:</strong> {risk.get('mitigation', 'No mitigation strategy')}</p>
+                                    
+                                    
+                                """, unsafe_allow_html=True)
+                                
+                                # Display IPC sections if they exist
+                                if 'ipc_sections' in risk and risk['ipc_sections']:
+                                    for section in risk['ipc_sections']:
+                                        st.markdown(f"""
+                                        <div class="ipc-section">
+                                            <div class="ipc-section-title">{section.get('section', 'N/A')}</div>
+                                            <p>{section.get('description', 'No description available')}</p>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                else:
+                                    st.markdown("<p>No relevant IPC sections identified</p>", unsafe_allow_html=True)
+                                
+                                st.markdown("""
+                                    </div>
                                     <details>
-                                        <summary><strong>{translations['occurrence']}</strong></summary>
+                                        <summary><strong>{occurrence_label}</strong></summary>
                                         <div style="background: #333; padding: 12px; border-radius: 8px; margin-top: 8px; border-left: 3px solid #6c757d;">
-                                            {risk.get('occurrence', 'Not specified')}
+                                            {occurrence_text}
                                         </div>
                                     </details>
                                 </div>
-                                """, unsafe_allow_html=True)
+                                """.format(
+                                    occurrence_label=translations['occurrence'],
+                                    occurrence_text=risk.get('occurrence', 'Not specified')
+                                ), unsafe_allow_html=True)
             
         except Exception as e:
             st.error(f"Failed to process PDF: {str(e)}")
@@ -1102,7 +1150,8 @@ with st.sidebar:
 st.markdown("""
 <div class="footer">
     <hr style="border: 0.5px solid #444; margin: 20px 0;">
-    <p>© 2023 Multilingual Legal Analyzer | AI-powered legal risk assessment</p>
+    <p>© 2025 Lexi-Lingua AI Powered Legal Document Analyzer | AI-powered legal risk assessment</p>
+    <p>Made by Pragateesh G ❤️</p>
 </div>
 """, unsafe_allow_html=True)
 
