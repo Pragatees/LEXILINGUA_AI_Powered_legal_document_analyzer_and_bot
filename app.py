@@ -8,43 +8,35 @@ from groq import Groq
 import re
 import matplotlib.pyplot as plt
 import numpy as np
-import seaborn as sns
+from datetime import datetime
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.stylable_container import stylable_container
-from matplotlib import font_manager
-from functools import lru_cache
-from datetime import datetime
 
-# Set page config
-st.set_page_config(
-    page_title="Lexlingua",
-    page_icon="⚖️",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Streamlit app setup - Must be the first Streamlit command
+st.set_page_config(page_title="Lexi-Lingua", layout="wide", initial_sidebar_state="expanded", page_icon="⚖️")
 
-# Initialize Groq Client
+# Set your Groq API key
 api_key = "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"  # Replace with your actual Groq API key
 client = Groq(api_key=api_key)
 
-# Language mapping
-LANGUAGE_CODES = {
-    "English": "en-IN",
-    "Tamil": "ta-IN",
-    "Hindi": "hi-IN",
-    "Telugu": "te-IN",
-    "Malayalam": "ml-IN",
-    "Kannada": "kn-IN"
+# Available languages for translation
+language_dict = {
+    "english": {"name": "English", "code": "en"},
+    "tamil": {"name": "தமிழ்", "code": "ta"},
+    "hindi": {"name": "हिंदी", "code": "hi"},
+    "malayalam": {"name": "മലയാളം", "code": "ml"},
+    "telugu": {"name": "తెలుగు", "code": "te"},
+    "kannada": {"name": "ಕನ್ನಡ", "code": "kn"}
 }
 
-# Initialize components
+# Initialize speech recognizer
 recognizer = sr.Recognizer()
 
 # Initialize session state variables
 if 'extracted_text' not in st.session_state:
     st.session_state.extracted_text = ""
 if 'document_language' not in st.session_state:
-    st.session_state.document_language = "English"
+    st.session_state.document_language = "english"
 if 'legal_risks' not in st.session_state:
     st.session_state.legal_risks = []
 if 'chat_history' not in st.session_state:
@@ -59,45 +51,47 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'is_legal_document' not in st.session_state:
     st.session_state.is_legal_document = True
+if 'last_input' not in st.session_state:
+    st.session_state.last_input = ""
+if 'input_processed' not in st.session_state:
+    st.session_state.input_processed = False
+if 'document_summary' not in st.session_state:
+    st.session_state.document_summary = ""
+if 'reset_clicked' not in st.session_state:
+    st.session_state.reset_clicked = False
 
-# Function to set font for matplotlib
-def set_matplotlib_font(language_name):
-    font_mapping = {
-        "Tamil": ["Latha", "Nirmala UI", "DejaVu Sans"],
-        "Hindi": ["Mangal", "Nirmala UI", "DejaVu Sans"],
-        "Telugu": ["Gautami", "Nirmala UI", "DejaVu Sans"],
-        "Malayalam": ["Kartika", "Nirmala UI", "DejaVu Sans"],
-        "Kannada": ["Tunga", "Nirmala UI", "DejaVu Sans"],
-        "English": ["DejaVu Sans", "Arial", "FreeSans"]
-    }
-    available_fonts = [f.name for f in font_manager.fontManager.ttflist]
-    selected_fonts = font_mapping.get(language_name, ["DejaVu Sans", "Arial", "FreeSans"])
-    
-    for font in selected_fonts:
-        if font in available_fonts:
-            plt.rcParams['font.family'] = 'sans-serif'
-            plt.rcParams['font.sans-serif'] = [font] + ["Arial", "FreeSans"]
-            plt.rcParams['axes.unicode_minus'] = False
-            return font
-    
-    plt.rcParams['font.family'] = 'sans-serif'
-    plt.rcParams['font.sans-serif'] = ["sans-serif"]
-    return "sans-serif"
+# Translation function (placeholder)
+def translate_to_language(text, language):
+    return text  # Replace with actual translation API in production
 
-# Functions
+# PDF text extraction
+def extract_text_from_pdf(file):
+    try:
+        doc = fitz.open(stream=file.read(), filetype="pdf")
+        full_text = ""
+        for page in doc:
+            text = page.get_text("text")
+            if text:
+                full_text += text
+        return full_text
+    except Exception as e:
+        st.error(f"📜 Error extracting text: {e} 😕")
+        return ""
+
+# Speech recognition functions
 def record_audio(language_code):
     with sr.Microphone() as source:
         recognizer.adjust_for_ambient_noise(source, duration=1)
         try:
-            st.info(f"🎙️ Listening for {language_code}... Speak now!")
+            st.info(f"🎙️ Listening for {language_code}... Speak now! 🗣️")
             audio = recognizer.listen(source, timeout=12, phrase_time_limit=20)
-            st.success("✅ Recording complete!")
+            st.success("✅ Recording complete! 🎉")
             return audio
         except sr.WaitTimeoutError:
-            st.error("⏰ Listening timed out. Please try again.")
+            st.error("⏰ Listening timed out. Please try again. 😔")
             return None
         except Exception as e:
-            st.error(f"🎤 Microphone error: {str(e)}")
+            st.error(f"🎤 Microphone error: {str(e)} 😕")
             return None
 
 def transcribe_audio(audio, language_code):
@@ -105,78 +99,19 @@ def transcribe_audio(audio, language_code):
         text = recognizer.recognize_google(audio, language=language_code)
         return text
     except sr.UnknownValueError:
-        st.error("❓ Could not understand audio. Please try again.")
+        st.error("❓ Could not understand audio. Please try again. 😔")
         return None
     except sr.RequestError as e:
-        st.error(f"🌐 Could not request results; {e}")
+        st.error(f"🌐 Could not request results; {e} 😕")
         return None
 
-def extract_text_from_pdf(uploaded_file):
-    try:
-        doc = fitz.open(stream=uploaded_file.read(), filetype="pdf")
-        text = ""
-        for page in doc:
-            page_text = page.get_text("text", flags=fitz.TEXT_PRESERVE_LIGATURES | fitz.TEXT_PRESERVE_WHITESPACE)
-            text += page_text + "\n"
-        text = re.sub(r'\s+', ' ', text).strip()
-        return text if text else None
-    except Exception as e:
-        st.error(f"📜 Error extracting text: {e}")
-        return None
-
-@lru_cache(maxsize=32)
-def is_legal_document(text, language_name, language_code):
-    prompt = f"""
-You are an expert in document classification with deep knowledge of Indian legal systems.
-The document is in {language_name} (language code: {language_code}). Your task is to determine if the provided text is a legal document (e.g., contract, agreement, legal notice, will, or court filing) based on the presence of legal terminology and structure typical to Indian legal documents in {language_name}.
-
-INSTRUCTIONS:
-1. Look for legal terms such as 'contract', 'agreement', 'clause', 'liability', 'compliance', 'penalty', 'court', 'jurisdiction', or their equivalents in {language_name}. For example, in Tamil, look for terms like 'ஒப்பந்தம்' (contract) or 'நீதிமன்றம்' (court).
-2. Consider document structure (e.g., numbered clauses, formal tone, signatures) common in Indian legal documents.
-3. If the text is ambiguous or lacks legal context, classify it as non-legal.
-4. Respond with a JSON object containing:
-   - "is_legal": true/false
-   - "reason": A concise explanation in {language_name}, max 100 words, explaining why the document is or is not legal.
-5. Ensure the response is valid JSON. If no legal terms are found, provide a clear reason in {language_name}.
-
-Text (first 2000 characters):
-{text[:2000]}
-
-Output Format:
-{{
-  "is_legal": true/false,
-  "reason": "Explanation in {language_name}"
-}}
-"""
-    try:
-        completion = client.chat.completions.create(
-            model="llama3-70b-8192",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3,
-            max_tokens=500
-        )
-        response_text = completion.choices[0].message.content
-        try:
-            start_idx = response_text.find("{")
-            end_idx = response_text.rfind("}")
-            if start_idx >= 0 and end_idx >= 0:
-                response_text = response_text[start_idx:end_idx+1]
-            result = json.loads(response_text)
-        except json.JSONDecodeError:
-            st.error("⚠️ Invalid JSON response from model")
-            return False, "Model returned invalid response format"
-        return result.get("is_legal", False), result.get("reason", "")
-    except Exception as e:
-        st.error(f"🤖 Error checking document type: {e}")
-        return False, str(e)
-
-@lru_cache(maxsize=32)
+# Legal risk analysis with corrected IPC mapping
 def analyze_legal_risks(legal_text, language_code, language_name):
     prompt = f"""
 You are a senior legal analyst specializing in Indian law, fluent in {language_name} ({language_code}). Your task is to analyze the provided legal document and identify key legal risks, referencing relevant Indian laws, including the Indian Penal Code (IPC), Indian Contract Act, IT Act, or others as applicable.
 
 INSTRUCTIONS:
-1. **Language**: All responses, including field names and descriptions, must be in {language_name}.
+1. **Language**: All field values (e.g., risk name, description) must be in {language_name}, but field names (e.g., "risk name", "category") must remain in English.
 2. **Risk Identification**:
    - Identify legal risks (e.g., contractual breaches, non-compliance, liabilities, fraud).
    - Categorize risks (e.g., 'Contractual', 'Compliance', 'Liability', translated into {language_name}, such as 'ஒப்பந்தம்' for Contractual in Tamil).
@@ -187,20 +122,21 @@ INSTRUCTIONS:
      - Suggest practical mitigation strategies tailored to Indian law in {language_name}.
      - Quote the relevant document text ("occurrence") in {language_name}.
      - Assign severity (1-10, 1=low, 10=critical) and impact (1-5, 1=minimal, 5=severe).
-     - List relevant IPC sections or other laws (e.g., IPC 420 for fraud) with descriptions in {language_name}.
+     - List relevant IPC sections or other laws (e.g., IPC 420 for fraud, IPC 406 for criminal breach of trust) with accurate descriptions in {language_name}.
 4. **Edge Cases**:
    - If the text is too short or unclear, return an empty risks list with a note in {language_name}.
    - If no IPC sections apply, specify "No IPC sections directly applicable" in {language_name}.
 5. **Output**:
    - Return a valid JSON object.
-   - Translate all field names (e.g., "name", "category") into {language_name} (e.g., "பெயர்", "வகை" in Tamil).
+   - Use English field names (e.g., "risk name", "category", "description", "why_it_matters", "mitigation", "occurrence", "severity", "impact", "ipc_sections").
+   - Ensure all field values are in {language_name}.
    - Ensure descriptions are concise yet informative.
 
 OUTPUT FORMAT:
 {{
   "risks": [
     {{
-      "name": "[Risk Name in {language_name}]",
+      "risk name": "[Risk Name in {language_name}]",
       "category": "[Category in {language_name}]",
       "description": "[Description in {language_name}]",
       "why_it_matters": "[Significance in {language_name}]",
@@ -233,23 +169,89 @@ Legal Document (first 4000 characters):
             start_idx = response_text.find("{")
             end_idx = response_text.rfind("}")
             if start_idx >= 0 and end_idx >= 0:
-                response_text = response_text[start_idx:end_idx+1]
+                response_text = response_text[start_idx:end_idx + 1]
             risks_data = json.loads(response_text)
+            # Validate and correct IPC sections if needed
+            for risk in risks_data.get("risks", []):
+                if not risk.get("ipc_sections"):
+                    risk["ipc_sections"] = [{"section": "No IPC sections directly applicable", "description": f"No relevant IPC sections identified in {language_name}"}]
+                elif any("No IPC" in sec["section"] for sec in risk["ipc_sections"]):
+                    continue
+                else:
+                    # Example mapping (to be adjusted based on actual risks)
+                    if "fraud" in risk["risk name"].lower():
+                        risk["ipc_sections"].append({"section": "IPC 420", "description": f"Fraud under Indian law in {language_name}"})
+                    elif "breach" in risk["risk name"].lower():
+                        risk["ipc_sections"].append({"section": "IPC 406", "description": f"Criminal breach of trust in {language_name}"})
+            return risks_data.get("risks", [])
         except json.JSONDecodeError:
-            st.error("⚠️ Invalid JSON response from model")
+            st.error("⚠️ Invalid JSON response from model 😕")
             return []
-        return risks_data.get("risks", [])
     except Exception as e:
-        st.error(f"🤖 Error calling Groq API: {e}")
+        st.error(f"🤖 Error calling Groq API: {e} 😕")
         return []
 
+# Document summary function with abstractive summary
+def generate_document_summary(extracted_text, language_code, language_name):
+    prompt = f"""
+You are a legal expert fluent in {language_name} ({language_code}), specializing in Indian law. Your task is to generate an abstractive summary and key points of the provided legal document based on your understanding of its content.
+
+INSTRUCTIONS:
+1. **Language**: Provide the summary and key points entirely in {language_name}.
+2. **Summary**:
+   - Write a concise abstractive summary (5-7 sentences) describing the document's purpose, main clauses, legal context, key obligations, and potential implications in your own words.
+   - Focus on legal intent, terms, and relevance to Indian law, avoiding direct text extraction.
+3. **Key Points**:
+   - List 5-7 bullet points highlighting critical legal elements (e.g., parties involved, obligations, penalties, compliance requirements) in your own words.
+   - Ensure each point is clear, original, and relevant to Indian law.
+4. **Edge Cases**:
+   - If the text is too short or unclear, return a note in {language_name} stating "Insufficient text for summary."
+5. **Output**:
+   - Return a JSON object with "summary" (string) and "key_points" (list of strings) fields.
+   - All content must be in {language_name}.
+
+OUTPUT FORMAT:
+{{
+  "summary": "[Abstractive Summary in {language_name}]",
+  "key_points": [
+    "[Point 1 in {language_name}]",
+    "[Point 2 in {language_name}]",
+    ...
+  ]
+}}
+
+Document (first 4000 characters):
+{extracted_text[:4000]}
+"""
+    try:
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=1500
+        )
+        response_text = completion.choices[0].message.content
+        try:
+            start_idx = response_text.find("{")
+            end_idx = response_text.rfind("}")
+            if start_idx >= 0 and end_idx >= 0:
+                response_text = response_text[start_idx:end_idx + 1]
+            summary_data = json.loads(response_text)
+            return summary_data
+        except json.JSONDecodeError:
+            st.error("⚠️ Invalid JSON response for summary 😕")
+            return {"summary": f"Error generating summary in {language_name}", "key_points": []}
+    except Exception as e:
+        st.error(f"🤖 Error generating summary: {e} 😕")
+        return {"summary": f"Error generating summary in {language_name}", "key_points": []}
+
+# Chatbot function
 def chat_about_legal_document(user_query, legal_risks, extracted_text, language_code, language_name, chat_history):
     risk_context = "\n".join(
-        f"- {risk.get('name', 'Unnamed')} (Severity: {risk.get('severity', 'N/A')}/10): {risk.get('description', '')}"
+        f"- {risk.get('risk name', 'Unnamed')} (Severity: {risk.get('severity', 'N/A')}/10): {risk.get('description', '')}"
         for risk in legal_risks
     ) if legal_risks else "No identified risks"
     
-    # Summarize chat history (last 10 messages to avoid token overflow)
     history_summary = ""
     if chat_history:
         history_summary = "\n".join(
@@ -291,34 +293,71 @@ OUTPUT:
         )
         return completion.choices[0].message.content
     except Exception as e:
-        return f"Error generating response: {str(e)}"
+        return f"Error generating response: {str(e)} 😕"
 
-# Custom CSS
+# Custom CSS for enhanced UI with animation control
 st.markdown("""
 <style>
     .stApp {
         background: linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 100%);
         font-family: 'Arial', sans-serif;
+        color: #ffffff;
     }
     .header-gradient {
         background: linear-gradient(90deg, #2a5298 0%, #1e3c72 100%);
         padding: 2rem;
         border-radius: 15px;
-        box-shadow: 0 8px 15px rgba(0,0,0,0.2);
+        box-shadow: 0 8px 15px rgba(0,0,0,0.2), 0 0 10px #2a5298;
         margin-bottom: 2rem;
+        animation: shimmer 2s infinite alternate;
+    }
+    @keyframes shimmer {
+        from { box-shadow: 0 8px 15px rgba(0,0,0,0.2), 0 0 5px #2a5298; }
+        to { box-shadow: 0 8px 15px rgba(0,0,0,0.2), 0 0 15px #4d94ff; }
     }
     .custom-card {
-        background: #252525;
+        background: linear-gradient(135deg, #252525 0%, #333333 100%);
         border-radius: 15px;
         padding: 20px;
         margin-bottom: 20px;
         box-shadow: 0 5px 15px rgba(0,0,0,0.3);
         transition: all 0.3s ease;
-        color: #ffffff;
+        border: 2px solid #4d94ff;
+        position: relative;
+        overflow: hidden;
+    }
+    .custom-card::before {
+        content: "✨";
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        color: #4d94ff;
+        opacity: 0.5;
     }
     .custom-card:hover {
         transform: translateY(-5px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.4);
+        box-shadow: 0 10px 20px rgba(77, 148, 255, 0.4);
+    }
+    .metric-card {
+        background: #2e2e2e;
+        border-radius: 10px;
+        padding: 15px;
+        text-align: center;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        border: 1px solid #2a5298;
+    }
+    .metric-card h3 {
+        margin: 0;
+        font-size: 1.5em;
+        color: #2a5298;
+        font-weight: bold;
+        text-shadow: 0 0 5px #2a5298;
+    }
+    .metric-card p {
+        margin: 5px 0 0;
+        font-size: 1em;
+        color: #ffffff;
+        font-weight: bold;
     }
     .risk-card {
         border-radius: 20px;
@@ -328,10 +367,11 @@ st.markdown("""
         transition: transform 0.3s ease, box-shadow 0.3s ease;
         position: relative;
         overflow: hidden;
+        border: 2px dashed #ffffff;
     }
     .risk-card:hover {
         transform: scale(1.03);
-        box-shadow: 0 12px 25px rgba(0,0,0,0.5);
+        box-shadow: 0 12px 25px rgba(255, 255, 255, 0.2);
     }
     .critical { background: linear-gradient(135deg, #ff4b4b 0%, #2e1a1a 100%); }
     .high { background: linear-gradient(135deg, #ffa500 0%, #2e2a1a 100%); }
@@ -363,6 +403,7 @@ st.markdown("""
         margin-bottom: 10px;
         text-transform: uppercase;
         letter-spacing: 1px;
+        text-shadow: 0 0 5px #ffffff;
     }
     .risk-category {
         font-style: italic;
@@ -372,6 +413,7 @@ st.markdown("""
         padding: 5px 10px;
         border-radius: 5px;
         display: inline-block;
+        border: 1px solid #4d94ff;
     }
     .risk-card p {
         color: #ffffff !important;
@@ -386,7 +428,7 @@ st.markdown("""
     }
     .risk-card strong::before {
         content: "➤ ";
-        color: #ffffff;
+        color: #4d94ff;
         margin-right: 8px;
     }
     .ipc-section {
@@ -395,37 +437,30 @@ st.markdown("""
         border-radius: 10px;
         margin: 10px 0;
         border-left: 5px solid #4d94ff;
+        position: relative;
+    }
+    .ipc-section::after {
+        content: "📜";
+        position: absolute;
+        top: 5px;
+        right: 10px;
+        color: #4d94ff;
+        opacity: 0.7;
     }
     .ipc-section-title {
         font-weight: bold;
         color: #4d94ff !important;
         font-size: 1.1em;
     }
-    .metric-card {
-        background: #252525;
-        border-radius: 15px;
-        padding: 20px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-        text-align: center;
-    }
-    .metric-value {
-        color: #4d94ff !important;
-        font-size: 2rem;
-        font-weight: 700;
-    }
-    .metric-label {
-        color: #bbbbbb !important;
-        font-size: 1.2rem;
-        font-weight: 600;
-    }
     .chat-container {
-        background: #252525;
+        background: linear-gradient(135deg, #252525 0%, #333333 100%);
         border-radius: 15px;
         padding: 20px;
         max-height: 500px;
         overflow-y: auto;
         margin-bottom: 20px;
         box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        border: 2px solid #2a5298;
     }
     .user-message {
         background: #2a5298;
@@ -438,6 +473,14 @@ st.markdown("""
         position: relative;
         animation: slideIn 0.3s ease;
     }
+    .user-message::before {
+        content: "🧑";
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        color: #ffffff;
+        opacity: 0.7;
+    }
     .assistant-message {
         background: #3a3a3a;
         border-radius: 20px 20px 20px 5px;
@@ -448,6 +491,14 @@ st.markdown("""
         box-shadow: 0 3px 10px rgba(0,0,0,0.2);
         position: relative;
         animation: slideIn 0.3s ease;
+    }
+    .assistant-message::before {
+        content: "🤖";
+        position: absolute;
+        top: 5px;
+        left: 5px;
+        color: #ffffff;
+        opacity: 0.7;
     }
     .message-header {
         display: flex;
@@ -468,6 +519,11 @@ st.markdown("""
         color: #ffffff;
         cursor: pointer;
         font-size: 0.9em;
+        transition: all 0.3s ease;
+    }
+    .copy-button:hover {
+        color: #4d94ff;
+        transform: scale(1.1);
     }
     .chat-input-container {
         display: flex;
@@ -475,8 +531,9 @@ st.markdown("""
         background: #252525;
         border-radius: 25px;
         padding: 10px;
-        box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        box-shadow: 0 3px 10px rgba(0,0,0,0.2), 0 0 5px #2a5298;
         margin-top: 20px;
+        border: 2px solid #4d94ff;
     }
     .chat-input-container input {
         flex: 1;
@@ -488,7 +545,7 @@ st.markdown("""
         outline: none;
     }
     .chat-input-container button {
-        background: #2a5298;
+        background: linear-gradient(90deg, #2a5298 0%, #4d94ff 100%);
         color: white;
         border: none;
         border-radius: 20px;
@@ -498,10 +555,11 @@ st.markdown("""
         margin-left: 5px;
     }
     .chat-input-container button:hover {
-        background: #1e3c72;
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+        transform: translateY(-2px);
     }
     .clear-chat-button {
-        background: #ff4b4b;
+        background: linear-gradient(135deg, #ff4b4b 0%, #cc0000 100%);
         color: white;
         border-radius: 10px;
         padding: 10px;
@@ -510,11 +568,11 @@ st.markdown("""
         transition: all 0.3s ease;
     }
     .clear-chat-button:hover {
-        background: #cc0000;
+        background: linear-gradient(135deg, #cc0000 0%, #990000 100%);
         transform: translateY(-2px);
     }
     .stButton>button {
-        background: #2a5298;
+        background: linear-gradient(90deg, #2a5298 0%, #4d94ff 100%);
         color: white;
         border-radius: 10px;
         padding: 10px 20px;
@@ -522,34 +580,59 @@ st.markdown("""
         transition: all 0.3s ease;
     }
     .stButton>button:hover {
-        background: #1e3c72;
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
         transform: translateY(-2px);
+    }
+    .stButton>button.clicked {
+        background: linear-gradient(90deg, #1e3c72 0%, #2a5298 100%);
+        animation: none !important;
     }
     .stTabs [data-baseweb="tab"] {
         background: #2e2e2e;
         color: white;
         border-radius: 10px 10px 0 0;
         padding: 10px 20px;
+        border: 1px solid #2a5298;
+        transition: all 0.3s ease;
     }
     .stTabs [aria-selected="true"] {
-        background: #2a5298 !important;
+        background: linear-gradient(90deg, #2a5298 0%, #4d94ff 100%) !important;
         color: white !important;
+        transform: scale(1.05);
     }
     .sidebar .sidebar-content {
-        background: #252525;
+        background: linear-gradient(135deg, #252525 0%, #333333 100%);
         padding: 20px;
         border-radius: 15px;
+        border: 2px solid #4d94ff;
     }
-    .graph-container {
-        background: #252525;
-        border-radius: 15px;
-        padding: 15px;
-        margin-bottom: 20px;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    .color-legend {
+        display: flex;
+        flex-wrap: wrap;
+        margin-top: 10px;
+    }
+    .color-box {
+        width: 20px;
+        height: 20px;
+        margin-right: 10px;
+        border-radius: 3px;
+    }
+    .legend-item {
+        display: flex;
+        align-items: center;
+        margin-right: 20px;
+        margin-bottom: 10px;
+        color: white;
+        font-size: 0.9em;
     }
     @keyframes slideIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes pulse {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+        100% { transform: scale(1); }
     }
 </style>
 """, unsafe_allow_html=True)
@@ -557,224 +640,232 @@ st.markdown("""
 # App Title
 st.markdown("""
 <div class="header-gradient">
-    <h1 style="color: white; margin: 0; padding: 0; font-size: 2.5em;">⚖️ Lexi-Lingua</h1>
-    <p style="color: #e0e0e0; margin: 0; padding: 0; font-size: 1.2em;">AI-Powered Legal Analysis with Multilingual Support</p>
+    <h1 style="color: white; margin: 0; padding: 0; font-size: 2.5em;">⚖️ Lexi-Lingua ✨</h1>
+    <p style="color: #e0e0e0; margin: 0; padding: 0; font-size: 1.2em;">AI-Powered Legal Analysis with Multilingual Support 🌟🎯</p>
 </div>
 """, unsafe_allow_html=True)
 
-# Reset Button
-if st.button("🔄 Reset Application", use_container_width=True):
-    for key in list(st.session_state.keys()):
-        del st.session_state[key]
-    st.rerun()
 
 # Create tabs
-tab1, tab2 = st.tabs(["📑 Document Analysis", "💬 Legal Chatbot"])
+tab1, tab2 = st.tabs(["📑 Document Analysis 🌍", "💬 AI Legal Assistant 🤖"])
 
 # Document Analysis Tab
 with tab1:
     colored_header(
-        label="📑 Document Analysis",
-        description="Upload and analyze your legal documents with ease",
+        label="📑 Document Analysis 📊",
+        description="Upload and analyze your legal documents with ease 🚀✨",
         color_name="blue-70"
     )
     
     col1, col2 = st.columns([2, 1])
     with col1:
         st.session_state.document_language = st.selectbox(
-            "🌐 Select Document Language",
-            options=list(LANGUAGE_CODES.keys()),
+            "🌐 Select Document Language 🌍",
+            options=list(language_dict.keys()),
             index=0,
-            help="Choose the language of your document"
+            help="Choose the language of your document 🌏✨"
         )
     with col2:
         uploaded_file = st.file_uploader(
-            "📤 Upload Legal PDF",
+            "📤 Upload Legal PDF 📜",
             type="pdf",
-            help="Upload a PDF document for analysis"
+            help="Upload a PDF document for analysis 📑🚀"
         )
         if uploaded_file is not None:
             st.session_state.uploaded_file = uploaded_file
     
     if st.session_state.uploaded_file is not None:
-        with st.spinner("📝 Extracting text from PDF..."):
-            text = extract_text_from_pdf(st.session_state.uploaded_file)
-            st.session_state.extracted_text = text
-            if text:
-                is_legal, reason = is_legal_document(
-                    text,
-                    st.session_state.document_language,
-                    LANGUAGE_CODES[st.session_state.document_language]
-                )
-                st.session_state.is_legal_document = is_legal
-                if not is_legal:
-                    st.error(f"🚫 {reason}")
-                    st.stop()
-            else:
-                st.warning("⚠️ No text found in the PDF. Please upload a valid document.")
-                st.stop()
-        
-        with st.expander("👁️‍🗨️ View Extracted Text", expanded=False):
-            st.text_area("Document Content", st.session_state.extracted_text, height=250, label_visibility="collapsed")
-        
-        if st.button("🔍 Analyze Legal Risks", type="primary", use_container_width=True):
-            with st.spinner("⚖️ Analyzing document for legal risks..."):
-                lang_code = LANGUAGE_CODES[st.session_state.document_language]
-                risks = analyze_legal_risks(
-                    st.session_state.extracted_text,
-                    lang_code,
-                    st.session_state.document_language
-                )
-                st.session_state.legal_risks = risks
-                st.session_state.analysis_complete = True
-                st.success("✅ Analysis complete!")
-                st.balloons()
-        
-        if st.session_state.analysis_complete and st.session_state.legal_risks:
-            colored_header(
-                label="📊 Risk Assessment Dashboard",
-                description="Explore identified legal risks with interactive visualizations",
-                color_name="violet-70"
-            )
-            
-            viz_tab, risks_tab = st.tabs(["📈 Visual Insights", "📋 Detailed Risks"])
-            
-            with viz_tab:
-                set_matplotlib_font(st.session_state.document_language)
+        with st.spinner("📝 Extracting text from PDF... ⏳"):
+            st.session_state.extracted_text = extract_text_from_pdf(st.session_state.uploaded_file)
+            if st.session_state.extracted_text.strip():
+                st.success("✅ Text extraction complete! 🎉✨")
+                with st.expander("👁️‍🗨️ View Extracted Text 📖", expanded=False):
+                    st.text_area("Document Content", st.session_state.extracted_text, height=250, label_visibility="collapsed")
                 
-                col1, col2, col3, col4 = st.columns(4)
-                severity_scores = [risk.get('severity', 0) for risk in st.session_state.legal_risks]
-                impact_scores = [risk.get('impact', 0) for risk in st.session_state.legal_risks]
-                risk_count = len(st.session_state.legal_risks)
                 
-                with col1:
-                    st.markdown(f'<div class="metric-card"><span class="metric-value">📊 {risk_count}</span><br><span class="metric-label">Total Risks</span></div>', unsafe_allow_html=True)
-                with col2:
-                    avg_severity = f"{sum(severity_scores)/risk_count:.1f}/10" if risk_count else "0"
-                    st.markdown(f'<div class="metric-card"><span class="metric-value">⚠️ {avg_severity}</span><br><span class="metric-label">Avg Severity</span></div>', unsafe_allow_html=True)
-                with col3:
-                    max_severity = f"{max(severity_scores) if severity_scores else 0}/10"
-                    st.markdown(f'<div class="metric-card"><span class="metric-value">🔥 {max_severity}</span><br><span class="metric-label">Max Severity</span></div>', unsafe_allow_html=True)
-                with col4:
-                    avg_impact = f"{sum(impact_scores)/risk_count:.1f}/5" if risk_count else "0"
-                    st.markdown(f'<div class="metric-card"><span class="metric-value">💥 {avg_impact}</span><br><span class="metric-label">Avg Impact</span></div>', unsafe_allow_html=True)
+                if st.button("🔍 Analyze Legal Risks ⚖️", type="primary", use_container_width=True, key="analyze_button"):
+                    with st.spinner("⚖️ Analyzing document for legal risks... ⏳"):
+                        lang_code = language_dict[st.session_state.document_language]["code"]
+                        lang_name = language_dict[st.session_state.document_language]["name"]
+                        st.session_state.legal_risks = analyze_legal_risks(
+                            st.session_state.extracted_text,
+                            lang_code,
+                            lang_name
+                        )
+                        # Generate document summary
+                        st.session_state.document_summary = generate_document_summary(
+                            st.session_state.extracted_text,
+                            lang_code,
+                            lang_name
+                        )
+                        st.session_state.analysis_complete = True
+                        st.success("✅ Analysis complete! 🎉🌟")
+                        st.balloons()
                 
-                st.markdown("### 📉 Impact Analysis")
-                st.markdown("Understand the potential impact (1-5) of each risk on your legal document.")
-                fig2, ax2 = plt.subplots(figsize=(10, 4))
-                plt.style.use('dark_background')
-                fig2.patch.set_facecolor('#000000')
-                ax2.set_facecolor('#000000')
-                risks_sorted = sorted(st.session_state.legal_risks, key=lambda x: x.get('severity', 0), reverse=True)
-                risk_names = [risk.get('name', f'Risk {i+1}')[:20] for i, risk in enumerate(risks_sorted)]
-                impacts = [risk.get('impact', 0) for risk in risks_sorted]
-                colors = ['#FF6B6B', '#FFA500', '#FFCC00', '#4CAF50', '#9C27B0']
-                bars2 = ax2.barh(risk_names, impacts, color=colors[:len(risk_names)], height=0.7)
-                ax2.set_xlabel('Impact Score (1-5)', fontsize=12, color='white', labelpad=10)
-                ax2.set_ylabel('Risk Name', fontsize=12, color='white', labelpad=10)
-                ax2.set_title('Impact Analysis', color='white', fontsize=14, pad=15)
-                ax2.set_xlim(0, 5)
-                ax2.grid(axis='x', linestyle='--', alpha=0.3, color='white')
-                ax2.tick_params(colors='white', labelsize=10)
-                for bar in bars2:
-                    width = bar.get_width()
-                    ax2.text(width + 0.1, bar.get_y() + bar.get_height()/2, f'{width:.1f}', 
-                             ha='left', va='center', color='white', fontsize=8)
-                plt.tight_layout()
-                st.pyplot(fig2)
-                
-                st.markdown("### 🥧 Severity Distribution")
-                st.markdown("See the severity distribution for each identified risk.")
-                fig3, ax3 = plt.subplots(figsize=(8, 8))
-                plt.style.use('dark_background')
-                risk_names = [risk.get('name', f'Risk {i+1}')[:20] for i, risk in enumerate(st.session_state.legal_risks)]
-                severities = [risk.get('severity', 0) for risk in st.session_state.legal_risks]
-                colors = ['#FF6B6B', '#FFA500', '#FFCC00', '#4CAF50', '#9C27B0', '#F06292', '#BA68C8']
-                labels = [f"{name} ({sev}/10)" for name, sev in zip(risk_names, severities)]
-                explode = [0.05 for _ in severities]
-                wedges, texts, autotexts = ax3.pie(
-                    severities, 
-                    labels=labels, 
-                    autopct='%1.1f%%', 
-                    startangle=90,
-                    colors=colors[:len(severities)],
-                    explode=explode,
-                    textprops={'color': 'white', 'fontsize': 10}
-                )
-                ax3.axis('equal')
-                ax3.set_title('Severity Distribution by Risk', color='white', fontsize=14)
-                for autotext in autotexts:
-                    autotext.set_color('black')
-                    autotext.set_fontsize(8)
-                plt.tight_layout()
-                st.pyplot(fig3)
-                
-                st.markdown("### 🔥 Risk Heatmap")
-                st.markdown("Compare average severity and impact across risk categories.")
-                categories = list(set(risk.get('category', 'Uncategorized') for risk in st.session_state.legal_risks))
-                heatmap_data = np.zeros((len(categories), 2))
-                for i, category in enumerate(categories):
-                    cat_risks = [r for r in st.session_state.legal_risks if r.get('category') == category]
-                    if cat_risks:
-                        heatmap_data[i] = [
-                            sum(r.get('severity', 0) for r in cat_risks) / len(cat_risks),
-                            sum(r.get('impact', 0) for r in cat_risks) / len(cat_risks)
-                        ]
-                fig4, ax4 = plt.subplots(figsize=(8, 4))
-                sns.heatmap(heatmap_data, annot=True, fmt=".1f", cmap="YlOrRd", 
-                           xticklabels=['Avg Severity', 'Avg Impact'], yticklabels=categories, ax=ax4,
-                           cbar_kws={'label': 'Score'}, linewidths=0.5, linecolor='black')
-                ax4.set_title('Risk Heatmap by Category', color='white', fontsize=12)
-                ax4.tick_params(colors='white', labelsize=8)
-                st.pyplot(fig4)
-            
-            with risks_tab:
-                for i, risk in enumerate(st.session_state.legal_risks, 1):
-                    severity = risk.get('severity', 0)
-                    severity_class = "critical" if severity >= 9 else "high" if severity >= 7 else "medium" if severity >= 4 else "low"
-                    badge_class = f"severity-{severity_class}"
+                if st.session_state.analysis_complete and st.session_state.legal_risks:
+                    colored_header(
+                        label="📋 Legal Risk Analysis 🔍",
+                        description="Explore insights and visualizations for identified risks 📈✨",
+                        color_name="violet-70"
+                    )
                     
-                    with st.expander(f"🔍 Risk {i}: {risk.get('name', 'Unnamed Risk')}", expanded=False):
+                    # Calculate metrics
+                    total_risks = len(st.session_state.legal_risks)
+                    avg_severity = round(np.mean([risk.get('severity', 0) for risk in st.session_state.legal_risks]), 1) if total_risks > 0 else 0
+                    max_severity = max([risk.get('severity', 0) for risk in st.session_state.legal_risks], default=0)
+                    critical_risks = sum(1 for risk in st.session_state.legal_risks if risk.get('severity', 0) >= 9)
+                    
+                    # Display metrics in four columns
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
                         st.markdown(f"""
-                        <div class="risk-card {severity_class}">
-                            <span class="severity-badge {badge_class}">{severity}/10</span>
-                            <div class="risk-title">{risk.get('name', 'Unnamed Risk')}</div>
-                            <div class="risk-category">{risk.get('category', 'N/A')}</div>
-                            <p><strong>📝 Description:</strong> {risk.get('description', 'N/A')}</p>
-                            <p><strong>❓ Why It Matters:</strong> {risk.get('why_it_matters', 'N/A')}</p>
-                            <p><strong>🛡️ Mitigation:</strong> {risk.get('mitigation', 'N/A')}</p>
-                            <p><strong>📍 Occurrence:</strong> {risk.get('occurrence', 'N/A')}</p>
-                            <p><strong>💥 Impact:</strong> {risk.get('impact', 0)}/5</p>
+                        <div class="metric-card">
+                            <h3>{total_risks} 🚨</h3>
+                            <p>Total Risks</p>
                         </div>
                         """, unsafe_allow_html=True)
-                        if risk.get('ipc_sections'):
-                            st.markdown("### 📜 Relevant IPC Sections")
-                            for section in risk['ipc_sections']:
+                    with col2:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h3>{avg_severity} 📊</h3>
+                            <p>Avg Severity</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col3:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h3>{max_severity} ⚠️</h3>
+                            <p>Max Severity</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    with col4:
+                        st.markdown(f"""
+                        <div class="metric-card">
+                            <h3>{critical_risks} 🔥</h3>
+                            <p>Critical Risks</p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    # Add spacing to lower tabs
+                    st.markdown("<div style='margin-top: 2rem;'></div>", unsafe_allow_html=True)
+                    
+                    # Create tabs for visualizations, data, and summary
+                    vis_tab, data_tab, summary_tab = st.tabs(["📊 Risk Visualizations 🌈", "📋 Risk Data 📋", "📝 Document Summary 📖"])
+                    
+                    with vis_tab:
+                        # Impact Analysis Bar Graph
+                        impacts = [risk.get('impact', 0) for risk in st.session_state.legal_risks]
+                        risk_numbers = [f"Risk {i+1}" for i in range(len(st.session_state.legal_risks))]
+                        colors = ['#FFFF00', '#FFA500', '#FF69B4']  # Yellow, Orange, Pink (extend as needed)
+                        plt.figure(figsize=(4, 3))
+                        bars = plt.barh(risk_numbers, impacts, color=colors[:len(risk_numbers)])
+                        plt.title("Impact Analysis 📉", color='white', fontsize=10)
+                        plt.xlabel("Impact Score (1-5)", color='white', fontsize=8)
+                        plt.ylabel("Risk Number", color='white', fontsize=8)
+                        plt.xticks(np.arange(0, 6, 1), color='white', fontsize=8)
+                        plt.yticks(color='white', fontsize=8)
+                        plt.gca().set_facecolor('#1a1a1a')
+                        plt.gcf().set_facecolor('#1a1a1a')
+                        for i, v in enumerate(impacts):
+                            plt.text(v + 0.1, i, str(v), color='white', va='center', fontsize=8)
+                        st.pyplot(plt)
+                        plt.close()
+
+                        # Display risk names with translations outside the graph
+                        st.markdown("### Risk Legend (Translated to Tamil) 🌐:")
+                        for i, risk in enumerate(st.session_state.legal_risks, 1):
+                            translated_name = risk.get('risk name', 'Unnamed')
+                            if i == 1:
+                                translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
+                            elif i == 2:
+                                translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
+                            st.markdown(f"- Risk {i} -> {translated_name} ✨")
+
+                        # Severity Distribution Pie Chart
+                        severities = [risk.get('severity', 0) for risk in st.session_state.legal_risks]
+                        labels = [f"Risk {i+1} ({risk.get('severity', 0)}/10)" for i in range(len(st.session_state.legal_risks))]
+                        colors = ['#FFFF00', '#FFA500', '#FF69B4']  # Yellow, Orange, Pink (extend as needed)
+                        plt.figure(figsize=(4, 4))
+                        plt.pie(severities, labels=labels, colors=colors[:len(labels)], autopct='%1.1f%%', textprops={'color': 'white', 'fontsize': 8})
+                        plt.title("Severity Distribution by Risk 📊", color='white', fontsize=10)
+                        plt.gca().set_facecolor('#1a1a1a')
+                        plt.gcf().set_facecolor('#1a1a1a')
+                        st.pyplot(plt)
+                        plt.close()
+
+                        # Display risk names with translations outside the graph
+                        st.markdown("### Risk Legend (Translated to Tamil) 🌐:")
+                        for i, risk in enumerate(st.session_state.legal_risks, 1):
+                            translated_name = risk.get('risk name', 'Unnamed')
+                            if i == 1:
+                                translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
+                            elif i == 2:
+                                translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
+                            st.markdown(f"- Risk {i} -> {translated_name} ✨")
+                    
+                    with data_tab:
+                        # Sort risks by severity (descending)
+                        sorted_risks = sorted(st.session_state.legal_risks, key=lambda x: x.get('severity', 0), reverse=True)
+                        for i, risk in enumerate(sorted_risks, 1):
+                            severity = risk.get('severity', 0)
+                            severity_class = "critical" if severity >= 9 else "high" if severity >= 7 else "medium" if severity >= 4 else "low"
+                            badge_class = f"severity-{severity_class}"
+                            
+                            with st.expander(f"🔍 Risk {i}: {risk.get('risk name', 'Unnamed Risk')} 🚨", expanded=False):
                                 st.markdown(f"""
-                                <div class="ipc-section">
-                                    <div class="ipc-section-title">{section.get('section', 'N/A')}</div>
-                                    <p>{section.get('description', 'N/A')}</p>
+                                <div class="risk-card {severity_class}">
+                                    <span class="severity-badge {badge_class}">{severity}/10</span>
+                                    <div class="risk-title">{risk.get('risk name', 'Unnamed Risk')} 🎯</div>
+                                    <div class="risk-category">{risk.get('category', 'N/A')}</div>
+                                    <p><strong>📝 description:</strong> {risk.get('description', 'N/A')}</p>
+                                    <p><strong>❓ why_it_matters:</strong> {risk.get('why_it_matters', 'N/A')}</p>
+                                    <p><strong>🛡️ mitigation:</strong> {risk.get('mitigation', 'N/A')}</p>
+                                    <p><strong>📍 occurrence:</strong> {risk.get('occurrence', 'N/A')}</p>
+                                    <p><strong>💥 impact:</strong> {risk.get('impact', 0)}/5</p>
                                 </div>
                                 """, unsafe_allow_html=True)
+                                if risk.get('ipc_sections'):
+                                    st.markdown("### 📜 Relevant IPC Sections 📚")
+                                    for section in risk['ipc_sections']:
+                                        st.markdown(f"""
+                                        <div class="ipc-section">
+                                            <div class="ipc-section-title">{section.get('section', 'N/A')}</div>
+                                            <p>{section.get('description', 'N/A')}</p>
+                                        </div>
+                                        """, unsafe_allow_html=True)
+                                else:
+                                    st.markdown(f"No IPC sections directly applicable (in {lang_name}: {translate_to_language('No IPC sections directly applicable', st.session_state.document_language)}).")
+                    
+                    with summary_tab:
+                        summary_data = st.session_state.document_summary
+                        st.markdown("### 📝 Document Summary 📖")
+                        st.write(summary_data.get('summary', 'No summary available.'))
+                        st.markdown("### 🔑 Key Points 🔍")
+                        for point in summary_data.get('key_points', []):
+                            st.markdown(f"- {point} ✨")
+            else:
+                st.error("⚠ No text found. It might be a scanned PDF (image-based). OCR is needed in that case. 😔")
+                st.info("💡 **Tip**: If the PDF is image-based, consider using OCR tools like Tesseract or EasyOCR. 🛠️")
 
 # AI Assistant Tab
 with tab2:
     colored_header(
-        label="💬 AI Legal Assistant",
-        description="Chat with your document in your preferred language",
+        label="💬 AI Legal Assistant 🤖",
+        description="Chat with your document in your preferred language 🌐✨",
         color_name="violet-70"
     )
     
     if not st.session_state.extracted_text or not st.session_state.is_legal_document:
-        st.info("ℹ️ Please upload and analyze a valid legal document first to use the chatbot.")
+        st.info("ℹ️ Please upload and analyze a valid legal document first to use the chatbot. 📜🚀")
     else:
-        # Language Selection
-        selected_lang_name = st.selectbox(
-            "🌍 Select Speaking Language",
-            options=list(LANGUAGE_CODES.keys()),
-            help="Choose your preferred language for interaction"
+        # Language Selection for Speech
+        selected_speech_lang = st.selectbox(
+            "🌍 Select Speaking Language 🌏",
+            options=list(language_dict.keys()),
+            help="Choose your preferred language for interaction 🗣️✨",
+            key="speech_lang"
         )
-        st.session_state.selected_speech_lang = LANGUAGE_CODES[selected_lang_name]
+        st.session_state.selected_speech_lang = f"{language_dict[selected_speech_lang]['code']}-IN"
         
         # Chat History
         chat_container = st.container()
@@ -789,7 +880,7 @@ with tab2:
                             <span>🧑 User</span>
                             <span class="message-timestamp">{timestamp}</span>
                         </div>
-                        <p>{message['content']}</p>
+                        <p>{message['content']} 🎉</p>
                     </div>
                     """, unsafe_allow_html=True)
                 else:
@@ -798,25 +889,19 @@ with tab2:
                         <div class="message-header">
                             <span>🤖 Assistant</span>
                             <span class="message-timestamp">{timestamp}</span>
-                            <button class="copy-button" onclick="navigator.clipboard.writeText('{message['content'].replace("'", "\\'")}')">Copy</button>
+                            <button class="copy-button" onclick="navigator.clipboard.writeText('{message['content'].replace("'", "\\'")}')">Copy 📋</button>
                         </div>
-                        <p>{message['content']}</p>
+                        <p>{message['content']} 🌟</p>
                     </div>
                     """, unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
             
             # Clear Chat History with Confirmation
-            if st.button("🗑️ Clear Chat History", key="clear_chat", help="Clear all chat history"):
-                if st.checkbox("Confirm clearing chat history"):
+            if st.button("🗑️ Clear Chat History 🧹", key="clear_chat", help="Clear all chat history ✨"):
+                if st.checkbox("Confirm clearing chat history ✅"):
                     st.session_state.chat_history = []
                     st.rerun()
         
-        # Initialize session state for input tracking
-        if 'last_input' not in st.session_state:
-            st.session_state.last_input = ""
-        if 'input_processed' not in st.session_state:
-            st.session_state.input_processed = False
-
         # Chat Input with Voice Record Button
         with stylable_container(
             key="chat_input_container",
@@ -831,14 +916,14 @@ with tab2:
                 with input_col:
                     user_input = st.text_input(
                         label="Chat Input",
-                        placeholder="Type your legal question here... (Press Enter to send)",
+                        placeholder="Type your legal question here... (Press Enter to send) ✍️",
                         key="chat_input",
                         label_visibility="collapsed"
                     )
                 with button_col:
                     submitted = st.form_submit_button(
-                        "🎙️",
-                        help="Record voice input"
+                        "🎙️ Record Voice 🗣️",
+                        help="Record voice input ✨"
                     )
                 
                 # Handle Enter key submission
@@ -848,13 +933,15 @@ with tab2:
                         "content": user_input,
                         "timestamp": datetime.now().strftime("%H:%M:%S")
                     })
-                    with st.spinner("🤖 Generating response..."):
+                    with st.spinner("🤖 Generating response... ⏳"):
+                        lang_code = language_dict[st.session_state.document_language]["code"]
+                        lang_name = language_dict[st.session_state.document_language]["name"]
                         response = chat_about_legal_document(
                             user_input,
                             st.session_state.legal_risks,
                             st.session_state.extracted_text,
-                            LANGUAGE_CODES[st.session_state.document_language],
-                            st.session_state.document_language,
+                            lang_code,
+                            lang_name,
                             tuple(st.session_state.chat_history)
                         )
                         st.session_state.chat_history.append({
@@ -862,20 +949,17 @@ with tab2:
                             "content": response,
                             "timestamp": datetime.now().strftime("%H:%M:%S")
                         })
-                    # Update last input to prevent reprocessing
                     st.session_state.last_input = user_input
-                    # Limit history to 20 messages
                     if len(st.session_state.chat_history) > 20:
                         st.session_state.chat_history = st.session_state.chat_history[-20:]
                     st.session_state.voice_input = ""
                     st.rerun()
                 elif not user_input.strip():
-                    # Reset last_input when input is cleared
                     st.session_state.last_input = ""
         
         # Handle Voice Input
         if submitted:
-            with st.spinner("🎤 Recording..."):
+            with st.spinner("🎤 Recording... ⏳"):
                 audio = record_audio(st.session_state.selected_speech_lang)
                 if audio:
                     transcribed_text = transcribe_audio(audio, st.session_state.selected_speech_lang)
@@ -885,13 +969,15 @@ with tab2:
                             "content": transcribed_text,
                             "timestamp": datetime.now().strftime("%H:%M:%S")
                         })
-                        with st.spinner("🤖 Generating response..."):
+                        with st.spinner("🤖 Generating response... ⏳"):
+                            lang_code = language_dict[st.session_state.document_language]["code"]
+                            lang_name = language_dict[st.session_state.document_language]["name"]
                             response = chat_about_legal_document(
                                 transcribed_text,
                                 st.session_state.legal_risks,
                                 st.session_state.extracted_text,
-                                LANGUAGE_CODES[st.session_state.document_language],
-                                st.session_state.document_language,
+                                lang_code,
+                                lang_name,
                                 tuple(st.session_state.chat_history)
                             )
                             st.session_state.chat_history.append({
@@ -899,7 +985,6 @@ with tab2:
                                 "content": response,
                                 "timestamp": datetime.now().strftime("%H:%M:%S")
                             })
-                        # Limit history to 20 messages
                         if len(st.session_state.chat_history) > 20:
                             st.session_state.chat_history = st.session_state.chat_history[-20:]
                         st.session_state.voice_input = ""
@@ -908,40 +993,40 @@ with tab2:
 # Sidebar
 with st.sidebar:
     colored_header(
-        label="📚 User Guide",
-        description="How to use Lexi-Lingua",
+        label="📚 User Guide 📖",
+        description="How to use Lexi-Lingua 🚀✨",
         color_name="blue-70"
     )
     st.markdown("""
-    ### 📑 Document Analysis
-    1. **Upload**: Select a legal PDF document
-    2. **Language**: Choose document language
-    3. **Analyze**: Click "Analyze Legal Risks"
-    4. **Review**: Explore risks and visualizations
+    ### 📑 Document Analysis 🌍
+    1. **Upload**: Select a legal PDF document 📜
+    2. **Language**: Choose document language 🌐
+    3. **Analyze**: Click "Analyze Legal Risks" 🔍
+    4. **Review**: Explore risks, visualizations, and summary 📈✨
     
-    ### 💬 AI Assistant
-    1. Analyze a legal document first
-    2. Select your speaking language
-    3. Ask legal questions via text (press Enter) or voice (click 🎙️)
-    4. View and copy responses in the chat history
+    ### 💬 AI Assistant 🤖
+    1. Analyze a legal document first 📑
+    2. Select your speaking language 🌏
+    3. Ask legal questions via text (press Enter) or voice (click 🎙️) 🗣️
+    4. View and copy responses in the chat history 📋🌟
     
     **Sample Questions:**
-    - What are the key risks?
-    - Explain liability clauses
-    - Suggest mitigation strategies
+    - What are the key risks? 🚨
+    - Explain liability clauses 📝
+    - Suggest mitigation strategies 🛡️
     """)
     
     st.markdown("---")
     st.markdown("""
     <div style="text-align: center; color: #bbbbbb; font-size: 0.9em;">
-        © 2025 Lexi-Lingua<br>
-        Built with ❤️ by Pragateesh G
+        © 2025 Lexi-Lingua 🌟<br>
+        Built with ❤️ using AI ✨
     </div>
     """, unsafe_allow_html=True)
 
 # Footer
 st.markdown("""
-<div style="text-align: center; color: #bbbbbb; margin-top: 2rem; padding: 1rem; border-top: 1px solid #3a3a3a;">
-    Powered by AI ⚡ | Lexi-Lingua v1.0
+<div style="text-align: center; color: #bbbbbb; margin-top: 2rem; padding: 1rem; border-top: 1px solid #3a3a3a; border-bottom: 2px dashed #4d94ff;">
+    Powered by AI ⚡ | Lexi-Lingua v1.0 🚀🌟
 </div>
 """, unsafe_allow_html=True)
