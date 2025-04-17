@@ -11,6 +11,7 @@ import numpy as np
 from datetime import datetime
 from streamlit_extras.colored_header import colored_header
 from streamlit_extras.stylable_container import stylable_container
+import pandas as pd
 
 # Streamlit app setup - Must be the first Streamlit command
 st.set_page_config(page_title="Lexi-Lingua", layout="wide", initial_sidebar_state="expanded", page_icon="⚖️")
@@ -59,6 +60,8 @@ if 'document_summary' not in st.session_state:
     st.session_state.document_summary = ""
 if 'reset_clicked' not in st.session_state:
     st.session_state.reset_clicked = False
+if 'recording' not in st.session_state:
+    st.session_state.recording = False
 
 # Translation function (placeholder)
 def translate_to_language(text, language):
@@ -245,6 +248,59 @@ Document (first 4000 characters):
         st.error(f"🤖 Error generating summary: {e} 😕")
         return {"summary": f"Error generating summary in {language_name}", "key_points": []}
 
+# NER Extraction Function using LLaMA with updated LOCATION label
+def extract_ner_with_llama(extracted_text, language_code, language_name):
+    prompt = f"""
+You are an AI expert in Named Entity Recognition (NER), fluent in {language_name} ({language_code}). Your task is to identify named entities in the provided legal document text and categorize them as PERSON, ORGANIZATION, LOCATION, DATE, or OTHER.
+
+INSTRUCTIONS:
+1. **Language**: Analyze the text in {language_name} and return entity text in the original language of the document.
+2. **Entity Types**:
+   - PERSON: Names of individuals (e.g., "John Doe").
+   - ORGANIZATION: Names of companies, institutions, etc. (e.g., "Acme Corp").
+   - LOCATION: Places like countries, cities, or other locations (e.g., "India", "Delhi").
+   - DATE: Specific dates or time periods (e.g., "2023-01-01", "January 2023").
+   - OTHER: Any other relevant entities not fitting the above categories.
+3. **Output**:
+   - Return a valid JSON array of objects, each with "text" (the entity) and "label" (the entity type).
+   - Ensure entities are unique and relevant to the legal context.
+   - If no entities are found, return an empty array.
+4. **Edge Cases**:
+   - If the text is too short or unclear, return an empty array.
+   - Avoid generic terms (e.g., "the company") unless they are specific named entities.
+5. **Limit**: Process up to the first 10000 characters of the text to avoid performance issues.
+
+OUTPUT FORMAT:
+[
+  {{"text": "[Entity Text]", "label": "[PERSON|ORGANIZATION|LOCATION|DATE|OTHER]"}},
+  ...
+]
+
+Document (first 10000 characters):
+{extracted_text[:10000]}
+"""
+    try:
+        completion = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.5,
+            max_tokens=1500
+        )
+        response_text = completion.choices[0].message.content
+        try:
+            start_idx = response_text.find("[")
+            end_idx = response_text.rfind("]")
+            if start_idx >= 0 and end_idx >= 0:
+                response_text = response_text[start_idx:end_idx + 1]
+            entities = json.loads(response_text)
+            return entities
+        except json.JSONDecodeError:
+            st.error("⚠️ Invalid JSON response for NER 😕")
+            return []
+    except Exception as e:
+        st.error(f"🤖 Error performing NER: {e} 😕")
+        return []
+
 # Chatbot function
 def chat_about_legal_document(user_query, legal_risks, extracted_text, language_code, language_name, chat_history):
     risk_context = "\n".join(
@@ -295,7 +351,7 @@ OUTPUT:
     except Exception as e:
         return f"Error generating response: {str(e)} 😕"
 
-# Custom CSS for enhanced UI with animation control
+# Custom CSS for enhanced UI with updated NER card-based display
 st.markdown("""
 <style>
     .stApp {
@@ -625,6 +681,63 @@ st.markdown("""
         color: white;
         font-size: 0.9em;
     }
+    .ner-card-container {
+        background: linear-gradient(135deg, #2e2e2e 0%, #3a3a3a 100%);
+        border-radius: 15px;
+        padding: 20px;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+        border: 2px solid #4d94ff;
+        margin-bottom: 20px;
+    }
+    .ner-card {
+        background: rgba(255,255,255,0.05);
+        border-radius: 10px;
+        padding: 15px;
+        margin-bottom: 15px;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        transition: all 0.3s ease;
+        border-left: 5px solid;
+        position: relative;
+    }
+    .ner-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 5px 15px rgba(77, 148, 255, 0.3);
+    }
+    .ner-card-person { border-left-color: #4CAF50; }
+    .ner-card-organization { border-left-color: #FFA500; }
+    .ner-card-location { border-left-color: #FF69B4; }
+    .ner-card-date { border-left-color: #00CED1; }
+    .ner-card-other { border-left-color: #2a5298; }
+    .ner-label {
+        padding: 5px 15px;
+        border-radius: 20px;
+        font-size: 0.9em;
+        font-weight: bold;
+        text-transform: uppercase;
+        box-shadow: 0 3px 10px rgba(0,0,0,0.2);
+        display: inline-block;
+        position: absolute;
+        top: 10px;
+        right: 10px;
+    }
+    .ner-label-person { background: #4CAF50; color: white; }
+    .ner-label-organization { background: #FFA500; color: white; }
+    .ner-label-location { background: #FF69B4; color: white; }
+    .ner-label-date { background: #00CED1; color: white; }
+    .ner-label-other { background: #2a5298; color: white; }
+    .ner-text {
+        font-size: 1.2em;
+        font-weight: bold;
+        color: #ffffff;
+        margin-bottom: 5px;
+    }
+    .ner-filter {
+        background: #252525;
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 20px;
+        border: 2px solid #4d94ff;
+    }
     @keyframes slideIn {
         from { opacity: 0; transform: translateY(10px); }
         to { opacity: 1; transform: translateY(0); }
@@ -644,7 +757,6 @@ st.markdown("""
     <p style="color: #e0e0e0; margin: 0; padding: 0; font-size: 1.2em;">AI-Powered Legal Analysis with Multilingual Support 🌟🎯</p>
 </div>
 """, unsafe_allow_html=True)
-
 
 # Create tabs
 tab1, tab2 = st.tabs(["📑 Document Analysis 🌍", "💬 AI Legal Assistant 🤖"])
@@ -681,7 +793,6 @@ with tab1:
                 st.success("✅ Text extraction complete! 🎉✨")
                 with st.expander("👁️‍🗨️ View Extracted Text 📖", expanded=False):
                     st.text_area("Document Content", st.session_state.extracted_text, height=250, label_visibility="collapsed")
-                
                 
                 if st.button("🔍 Analyze Legal Risks ⚖️", type="primary", use_container_width=True, key="analyze_button"):
                     with st.spinner("⚖️ Analyzing document for legal risks... ⏳"):
@@ -755,13 +866,16 @@ with tab1:
                     with vis_tab:
                         # Impact Analysis Bar Graph
                         impacts = [risk.get('impact', 0) for risk in st.session_state.legal_risks]
-                        risk_numbers = [f"Risk {i+1}" for i in range(len(st.session_state.legal_risks))]
-                        colors = ['#FFFF00', '#FFA500', '#FF69B4']  # Yellow, Orange, Pink (extend as needed)
+                        if st.session_state.document_language == "english":
+                            risk_labels = [risk.get('risk name', f"Risk {i+1}") for i, risk in enumerate(st.session_state.legal_risks)]
+                        else:
+                            risk_labels = [f"Risk {i+1}" for i in range(len(st.session_state.legal_risks))]
+                        colors = ['#FFFF00', '#FFA500', '#FF69B4', '#00CED1']  # Yellow, Orange, Pink, Cyan
                         plt.figure(figsize=(4, 3))
-                        bars = plt.barh(risk_numbers, impacts, color=colors[:len(risk_numbers)])
+                        bars = plt.barh(risk_labels, impacts, color=colors[:len(risk_labels)])
                         plt.title("Impact Analysis 📉", color='white', fontsize=10)
                         plt.xlabel("Impact Score (1-5)", color='white', fontsize=8)
-                        plt.ylabel("Risk Number", color='white', fontsize=8)
+                        plt.ylabel("Risks", color='white', fontsize=8)
                         plt.xticks(np.arange(0, 6, 1), color='white', fontsize=8)
                         plt.yticks(color='white', fontsize=8)
                         plt.gca().set_facecolor('#1a1a1a')
@@ -771,20 +885,29 @@ with tab1:
                         st.pyplot(plt)
                         plt.close()
 
-                        # Display risk names with translations outside the graph
-                        st.markdown("### Risk Legend (Translated to Tamil) 🌐:")
-                        for i, risk in enumerate(st.session_state.legal_risks, 1):
-                            translated_name = risk.get('risk name', 'Unnamed')
-                            if i == 1:
-                                translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
-                            elif i == 2:
-                                translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
-                            st.markdown(f"- Risk {i} -> {translated_name} ✨")
+                        # Display risk mapping outside the graph for non-English languages
+                        if st.session_state.document_language != "english":
+                            st.markdown(f"### Risk Legend (Translated to {st.session_state.document_language.title()}) 🌐:")
+                            for i, risk in enumerate(st.session_state.legal_risks, 1):
+                                translated_name = risk.get('risk name', 'Unnamed')
+                                if st.session_state.document_language == "tamil":
+                                    if i == 1:
+                                        translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
+                                    elif i == 2:
+                                        translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
+                                    elif i == 3:
+                                        translated_name = "சட்டவிரோத பரிமாற்றம்"  # Illegal Transaction
+                                    elif i == 4:
+                                        translated_name = "பொறுப்பு மீறல்"  # Liability Breach
+                                st.markdown(f"- Risk {i} -> {translated_name} ✨")
 
                         # Severity Distribution Pie Chart
                         severities = [risk.get('severity', 0) for risk in st.session_state.legal_risks]
-                        labels = [f"Risk {i+1} ({risk.get('severity', 0)}/10)" for i in range(len(st.session_state.legal_risks))]
-                        colors = ['#FFFF00', '#FFA500', '#FF69B4']  # Yellow, Orange, Pink (extend as needed)
+                        if st.session_state.document_language == "english":
+                            labels = [risk.get('risk name', f"Risk {i+1} ({risk.get('severity', 0)}/10)") for i, risk in enumerate(st.session_state.legal_risks)]
+                        else:
+                            labels = [f"Risk {i+1} ({risk.get('severity', 0)}/10)" for i, risk in enumerate(st.session_state.legal_risks)]
+                        colors = ['#FFFF00', '#FFA500', '#FF69B4', '#00CED1']  # Yellow, Orange, Pink, Cyan
                         plt.figure(figsize=(4, 4))
                         plt.pie(severities, labels=labels, colors=colors[:len(labels)], autopct='%1.1f%%', textprops={'color': 'white', 'fontsize': 8})
                         plt.title("Severity Distribution by Risk 📊", color='white', fontsize=10)
@@ -793,15 +916,21 @@ with tab1:
                         st.pyplot(plt)
                         plt.close()
 
-                        # Display risk names with translations outside the graph
-                        st.markdown("### Risk Legend (Translated to Tamil) 🌐:")
-                        for i, risk in enumerate(st.session_state.legal_risks, 1):
-                            translated_name = risk.get('risk name', 'Unnamed')
-                            if i == 1:
-                                translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
-                            elif i == 2:
-                                translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
-                            st.markdown(f"- Risk {i} -> {translated_name} ✨")
+                        # Display risk mapping outside the graph for non-English languages
+                        if st.session_state.document_language != "english":
+                            st.markdown(f"### Risk Legend (Translated to {st.session_state.document_language.title()}) 🌐:")
+                            for i, risk in enumerate(st.session_state.legal_risks, 1):
+                                translated_name = risk.get('risk name', 'Unnamed')
+                                if st.session_state.document_language == "tamil":
+                                    if i == 1:
+                                        translated_name = "தகவல் பாதுகாப்பு இல்லாமை"  # Unauthorized Disclosure
+                                    elif i == 2:
+                                        translated_name = "ஒப்பந்தம் இல்லாமை"  # Non-Compliance
+                                    elif i == 3:
+                                        translated_name = "சட்டவிரோத பரிமாற்றம்"  # Illegal Transaction
+                                    elif i == 4:
+                                        translated_name = "பொறுப்பு மீறல்"  # Liability Breach
+                                st.markdown(f"- Risk {i} -> {translated_name} ✨")
                     
                     with data_tab:
                         # Sort risks by severity (descending)
@@ -843,6 +972,47 @@ with tab1:
                         st.markdown("### 🔑 Key Points 🔍")
                         for point in summary_data.get('key_points', []):
                             st.markdown(f"- {point} ✨")
+                        
+                        # NER Section with Card-Based UI
+                        st.markdown("### 🧠 Named Entity Recognition (NER) 🔍")
+                        lang_code = language_dict[st.session_state.document_language]["code"]
+                        lang_name = language_dict[st.session_state.document_language]["name"]
+                        entities = extract_ner_with_llama(st.session_state.extracted_text, lang_code, lang_name)
+                        if entities:
+                            # Prepare data for display
+                            df = pd.DataFrame(entities, columns=["text", "label"])
+                            df.columns = ["Entity", "Type"]
+                            
+                            # Filter by entity type
+                            entity_types = sorted(set(df["Type"]))
+                            selected_types = st.multiselect(
+                                "🔍 Filter by Entity Type",
+                                options=entity_types,
+                                default=entity_types,
+                                key="ner_filter",
+                                help="Select entity types to display 🌟"
+                            )
+                            
+                            # Apply filter
+                            if selected_types:
+                                filtered_df = df[df["Type"].isin(selected_types)]
+                            else:
+                                filtered_df = df
+                            
+                            # Display NER results as cards
+                            st.markdown('<div class="ner-card-container">', unsafe_allow_html=True)
+                            for _, row in filtered_df.iterrows():
+                                entity = row["Entity"]
+                                label = row["Type"].lower()
+                                st.markdown(f"""
+                                <div class="ner-card ner-card-{label}">
+                                    <div class="ner-text">{entity}</div>
+                                    <span class="ner-label ner-label-{label}">{label.upper()}</span>
+                                </div>
+                                """, unsafe_allow_html=True)
+                            st.markdown('</div>', unsafe_allow_html=True)
+                        else:
+                            st.info("ℹ️ No named entities detected in the document. 😔")
             else:
                 st.error("⚠ No text found. It might be a scanned PDF (image-based). OCR is needed in that case. 😔")
                 st.info("💡 **Tip**: If the PDF is image-based, consider using OCR tools like Tesseract or EasyOCR. 🛠️")
@@ -902,7 +1072,7 @@ with tab2:
                     st.session_state.chat_history = []
                     st.rerun()
         
-        # Chat Input with Voice Record Button
+        # Chat Input with Voice Record and Stop Buttons
         with stylable_container(
             key="chat_input_container",
             css_styles="""
@@ -912,7 +1082,7 @@ with tab2:
             """
         ):
             with st.form(key="chat_form", clear_on_submit=True):
-                input_col, button_col = st.columns([10, 1])
+                input_col, button_col1, button_col2 = st.columns([10, 1, 1])
                 with input_col:
                     user_input = st.text_input(
                         label="Chat Input",
@@ -920,10 +1090,15 @@ with tab2:
                         key="chat_input",
                         label_visibility="collapsed"
                     )
-                with button_col:
-                    submitted = st.form_submit_button(
+                with button_col1:
+                    record_button = st.form_submit_button(
                         "🎙️ Record Voice 🗣️",
-                        help="Record voice input ✨"
+                        help="Start recording voice input ✨"
+                    )
+                with button_col2:
+                    stop_button = st.form_submit_button(
+                        "🛑 Stop Recording ⏹️",
+                        help="Stop recording voice input ✨"
                     )
                 
                 # Handle Enter key submission
@@ -957,8 +1132,9 @@ with tab2:
                 elif not user_input.strip():
                     st.session_state.last_input = ""
         
-        # Handle Voice Input
-        if submitted:
+        # Handle Voice Recording with Stop Functionality
+        if record_button and not st.session_state.recording:
+            st.session_state.recording = True
             with st.spinner("🎤 Recording... ⏳"):
                 audio = record_audio(st.session_state.selected_speech_lang)
                 if audio:
@@ -988,7 +1164,15 @@ with tab2:
                         if len(st.session_state.chat_history) > 20:
                             st.session_state.chat_history = st.session_state.chat_history[-20:]
                         st.session_state.voice_input = ""
+                        st.session_state.recording = False
                         st.rerun()
+                st.session_state.recording = False
+        
+        # Handle Stop Recording
+        if stop_button and st.session_state.recording:
+            st.session_state.recording = False
+            st.info("🛑 Recording stopped. 😊")
+            st.rerun()
 
 # Sidebar
 with st.sidebar:
@@ -1007,7 +1191,7 @@ with st.sidebar:
     ### 💬 AI Assistant 🤖
     1. Analyze a legal document first 📑
     2. Select your speaking language 🌏
-    3. Ask legal questions via text (press Enter) or voice (click 🎙️) 🗣️
+    3. Ask legal questions via text (press Enter) or voice (click 🎙️ and 🛑 to stop) 🗣️
     4. View and copy responses in the chat history 📋🌟
     
     **Sample Questions:**
